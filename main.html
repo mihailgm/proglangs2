@@ -1,0 +1,287 @@
+<html>
+<head>
+    <title>My googledocs</title>
+    <script>
+        window.onload = function () {
+        	function myError(text) {
+            	this.text = text;
+            }
+        	function one_level_evaluate(terms, operators) {
+            	console.log("top_level_evaluate", terms, operators);
+                for (i = 0; i < terms.length; i++) { 
+                	if (terms[i] instanceof myError) {
+                    	return terms[i];
+                    }
+                }
+                var dense_terms = [];
+                var dense_operators = [];
+                for (i = 0; i < terms.length; i++) {
+                	current_term = terms[i];
+                    while (i < operators.length && (operators[i] === "*" || operators[i] === "/")) {
+                    	if (operators[i] === "*") {
+                      		current_term = current_term * terms[i+1];
+                        }
+                        if (operators[i] === "/") {
+                    		current_term = current_term / terms[i+1];
+                        }
+                        i += 1;
+                    }
+                    dense_terms.push(current_term);
+                  	if (i < operators.length) {  dense_operators.push(operators[i]);
+                    }
+                }
+                var result = dense_terms[0];
+                for (i = 0; i < dense_operators.length; i++) {
+                	if (dense_operators[i] === '+') {
+                    	result += dense_terms[i+1];
+                    }
+                    if (dense_operators[i] === '-') {
+                    	result -= dense_terms[i+1];
+                    }
+                }
+                return result;
+            }
+            function must_be_atomic_term(term) {
+            	var delims = ["+", "-", "/", "*", "(", ")"];
+                for (i = 0; i < delims.length; i++) {
+                	delim = delims[i];
+                	if (term.search("\\" + delim) != -1) {					
+                    	return false;
+                    }
+                }
+                return true;
+            }
+            function evaluate_atomic_term(term) {
+            	console.log("evaluate atomic", term)
+                if (term[0] === "'" && term[term.length-1] === "'") {
+                	return term.substring(1, term.length-1)
+				}
+                console.log(term[0].match(/[A-Z]/i), Number(term.substring(1)))
+                if (term[0].match(/[A-Z]/i) && Number(term.substring(1)) <= 20 && Number(term.substring(1)) >= 1) {
+                	storage.getEntry(term).calculate()
+                	value = storage.getEntry(term).value;
+                    
+                    if (isNaN(value)) {
+                    	return value;
+                    } else {
+                    	return Number(value);
+                    }
+                }
+            	if (isNaN(term)) {
+                	return new myError("Bad atomic term."); 
+				} else {
+                	return Number(term);
+				}
+            }
+        	function evaluate(expr) {
+            	console.log("evaluate", expr);
+                if (expr.length === 0) {
+                	return new myError("Empty term");
+                }
+            	if (must_be_atomic_term(expr)) {
+                	return evaluate_atomic_term(expr)
+                }
+                var operators = ["+", "-", "*", "/"];
+               	var current_operators = [];
+                var current_terms = [];
+                var last_operator_index = -1;
+            	var balance = 0;
+                for (var i = 0; i < expr.length; ++i) {
+                    if (expr[i] === '(') {
+                      balance += 1;
+                    }
+                    if (expr[i] === ')') {
+                      balance -= 1;
+                    }
+                    if (balance < 0) {
+                      return new myError("Invalid expression. No parentness matching.");
+                    }
+                    if (balance === 0 && (operators.indexOf(expr[i]) != -1)) {
+                    	if (expr[i] != "-" || (i > 0 && operators.indexOf(expr[i-1]) === -1)) {
+                          current_terms.push(expr.substring(last_operator_index + 1, i));
+                          current_operators.push(expr[i]);
+                          last_operator_index = i;
+                        }
+                    }
+                }  current_terms.push(expr.substring(last_operator_index + 1));	
+                
+              	if (balance != 0) {
+                	return new myError("Invalid expression. No parentness matching.");
+                }
+                if (current_terms.length == 1) {
+                	term = current_terms[0];
+                	if (term[0] === "-") {
+                    	temp = evaluate(term.substring(1));
+                        if (temp instanceof myError) {
+                        	return temp;
+                        } else {
+                    		return -1 * evaluate(term.substring(1));
+                        }
+                    }
+                    if (term.substring(0,4) === "ABS(" && term[term.length-1] === ")") {
+                    	return Math.abs(evaluate(term.substring(4,term.length-1)));
+                    }
+                    if (term.substring(0,4) === "SIN(" && term[term.length-1] === ")") {
+                    	return Math.sin(evaluate(term.substring(4,term.length-1)));
+                    }
+                	if (term.substring(0,4) === "LEN(" && term[term.length-1] === ")") {
+                    	return evaluate(term.substring(4,term.length-1)).length;
+                    }
+
+                	if (term[0] != "(" || term[term.length-1] != ")") {
+                    	return new myError("Bad semantics.");
+					}
+                }
+                
+                console.log(current_terms, current_operators)
+                current_results = current_terms.map(function(term) {
+                	if (term[0] ==='(' && term[term.length-1] ===')') {
+                    	return evaluate(term.substring(1,term.length-1));
+                    } else {
+                    	return evaluate(term);
+                    }
+                });
+                console.log(current_results, current_operators)
+                return one_level_evaluate(current_results, current_operators)
+			}
+            function apply_formula(formula) {
+            	if (formula.length == 0 || formula[0] != "=") {
+                	return formula;
+                } else {
+                	var result = evaluate(formula.substr(1));
+                    if (result instanceof myError) {
+                    	return result.text;
+                    } else {
+                    	return result;
+                    }
+                }
+            }
+        	function Entry(id) {
+            	this.id = id;
+            	this.value = "";
+                this.formula = "";
+                this.childrens = [];
+             	this.calculate = function() {
+                	var cell = document.getElementById(this.id);
+                    this.value = apply_formula(this.formula)
+                    cell.textContent = this.value
+                }
+                this.toJson = function() {
+                	return {"id": this.id, "formula": this.formula}
+                }
+                this.fromJson = function(json_value) {
+                	this.id  = 	json_value.id;
+                	this.formula  = json_value.formula;
+                }
+            }
+            function Storage() {
+            	this.entries = {}
+                this.addEntry = function(id) {
+                	this.entries[id] = new Entry(id)
+                }
+                this.getEntry = function(id) {
+                	return this.entries[id]
+                }
+                this.editEntry = function(id, text) {
+                	if (id in this.entries) {
+                    	this.entries[id].formula = text.replace(/ /g, "");;
+                        this.entries[id].calculate();
+                    }
+                    else {
+                    	return
+                    }
+                }
+                this.calculate = function() {
+             		for (key in this.entries) {
+                    	this.entries[key].calculate();
+                  	}
+                }
+                this.toJson = function() {
+                	return Object.values(this.entries);
+                }
+                this.fromJson = function(json_value) {
+                	this.entries = {}
+                	for (key in json_value) {
+                    	item = json_value[key];
+                        this.entries[item.id] = new Entry(item.id);
+                        this.entries[item.id].fromJson(item);
+                	}
+                }
+			}
+            storage = new Storage()
+           	var table = document.getElementById('table');
+            {
+                var header = document.createElement('tr');
+                var upperLeft = document.createElement('td');
+                header.appendChild(upperLeft);
+                for (var j = 0; j < 26; ++j) {
+                    var columnHeader = document.createElement('td');
+                    columnHeader.classList.add('header');
+                    columnHeader.textContent = String.fromCharCode('A'.charCodeAt(0) + j);
+                    header.appendChild(columnHeader);
+                }
+                table.appendChild(header)
+            }
+            for (var i = 1; i <= 20; ++i) {
+                var row = document.createElement('tr');
+                var rowHeader = document.createElement('td');
+                rowHeader.textContent = i;
+                rowHeader.classList.add('header');
+                row.appendChild(rowHeader);
+                for (var j = 0; j < 26; ++j) {
+                    var cell = document.createElement('td');
+                    cell.classList.add('cell');
+                    cell.id = String.fromCharCode('A'.charCodeAt(0) + j) + i;
+                    storage.addEntry(cell.id)
+                    row.appendChild(cell);
+                }
+                table.appendChild(row)
+            }
+            document.querySelectorAll('.cell').forEach(function (cell) {
+                cell.onclick = function () {
+                    var form = document.createElement('form');
+                    var input = document.createElement('input');
+                    input.value = storage.getEntry(cell.id).formula
+                    input.onclick = function (e) {
+                        e.stopPropagation();
+                    };
+                    form.onsubmit = function () {
+                    	console.log(cell.id, input.value)
+                    	storage.editEntry(cell.id, input.value)
+                        storage.calculate();
+                        cell.removeChild(form);                 
+                    };
+                    form.appendChild(input);
+                    cell.appendChild(form);
+                    input.focus();
+                };
+            });
+		}
+        window.saveStorage = function () {
+           localStorage.setItem('storage', JSON.stringify(storage.toJson()));
+        };
+        window.loadStorage = function () {
+            storage.fromJson(JSON.parse(localStorage.getItem('storage')));
+            storage.calculate()
+        }
+    </script>
+    <style>
+        #table {
+            border-collapse: collapse;
+            border: 1px solid black;
+            min-width: 100%;
+        }
+        #table td {
+            border: 1px solid black;
+        }
+        .header {
+            background-color: #aaaaaa;
+        }
+    </style>
+</head>
+<body>
+<button onclick="saveStorage();">Save</button>
+<button onclick="loadStorage();">Load</button>
+<table id="table"></table>
+</body>
+</html>
